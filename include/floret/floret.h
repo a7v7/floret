@@ -78,9 +78,22 @@ void floret_init(const floret_task_t* table, floret_id_t count);
 void floret_start(void);
 
 //------------------------------------------------------------------------------
+//  Function: floret_idle
+//      Sleep until an interrupt, unless there is work: a ready task or a tick
+//      not yet given to the timers. The check and the sleep happen with
+//      interrupt handlers held off, so no event can slip in between, and
+//      interrupt time is never counted as idle time. Handlers held off during
+//      the sleep run as floret_idle() returns.
+//
+//      To run Floret inside an existing main loop:
+//          if(!floret_step()) floret_idle();
+//------------------------------------------------------------------------------
+void floret_idle(void);
+
+//------------------------------------------------------------------------------
 //  Function: floret_run
-//      Dispatch events forever: always the highest-priority ready task, one
-//      handler call at a time; sleep when nothing is ready.
+//      Dispatch events forever: floret_step(), and floret_idle() whenever
+//      there was nothing to do.
 //------------------------------------------------------------------------------
 #ifdef __cplusplus
 [[noreturn]] void floret_run(void);
@@ -92,8 +105,9 @@ _Noreturn void floret_run(void);
 //  Function: floret_step
 //      Do one unit of work: process expired timers, then dispatch at most one
 //      handler of the highest-priority ready task. Never sleeps.
-//      floret_run() is this in a loop, sleeping when it returns false. Call it
-//      directly to run Floret inside an existing main loop, or in tests.
+//      floret_run() is this in a loop, calling floret_idle() when it returns
+//      false. Call it directly to run Floret inside an existing main loop, or
+//      in tests.
 //
 //  Returns:
 //      true if a task was ready, false if there was nothing to do

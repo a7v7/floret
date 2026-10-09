@@ -83,8 +83,7 @@ bool floret_signal(floret_id_t task, floret_class_t cls, uint32_t bits);
 
 - **Safe from anywhere:** thread code, any handler, or **any interrupt at any priority**.
 - **Lock-free:** the bits are ORed in with a C11 atomic (`atomic_fetch_or`, which compiles to an `LDREX`/`STREX` loop on Cortex-M3/M4/M7). No interrupts are ever masked, so signaling can't delay the audio interrupt, unlike libDaisy's PRIMASK-based `ScopedIrqBlocker`.
-- **Marks the task ready:** it also sets the task's bit in the ready set (section 5).
-- **Wakes the CPU:** finally, `floret_signal()` calls `floret_port_notify()` (section 8), so a CPU about to sleep sees the new event.
+- **Marks the task ready:** it also sets the task's bit in the ready set (section 5). No separate wake-up call is needed: the way Floret sleeps (section 6) guarantees a signal from an interrupt is never missed.
 - **Only `isr` and `usr`.** The `sys` class belongs to the kernel, so `floret_signal()` refuses it.
 - **Returns `false`** for an invalid task id or class.
 
@@ -118,7 +117,7 @@ loop forever:
     process expired timers                          /* section 7 */
     ready = load(ready_set)
     if ready == 0:
-        floret_port_idle_wait()                     /* section 6 */
+        floret_idle()                               /* section 6 */
         continue
     task = count_trailing_zeros(ready)              /* highest priority */
     atomic_fetch_and(&ready_set, ~(1 << task))
@@ -149,13 +148,37 @@ The policy lives in a few lines of the dispatcher, so a different one (round-rob
 
 ## 6. Sleeping
 
-When no task is ready, `floret_run()` calls `floret_port_idle_wait()`. On Cortex-M the port implements it with **`WFE` (wait for event)** rather than `WFI`, because of a race:
+```c
+void floret_idle(void);   /* sleep until an interrupt, unless there is work */
+```
 
-1. The dispatcher finds the ready set empty.
+When there is nothing to do, `floret_run()` calls `floret_idle()`. Two problems have to be solved here.
+
+**1. The wake-up race.**
+1. The kernel finds no work.
 2. An interrupt fires *now*, between the check and the sleep, and signals a task.
-3. The CPU executes the sleep instruction, and the new event waits until some unrelated interrupt wakes the CPU.
+3. The CPU goes to sleep anyway, and the new event waits until some unrelated interrupt wakes the CPU.
 
-The usual cure is to disable interrupts around the check, which would mask the audio interrupt. Floret instead uses the Cortex-M event register: `floret_port_notify()` executes `SEV`, which latches the register, and a `WFE` with the register latched returns immediately instead of sleeping. The race closes without masking anything. An occasional spurious wake-up only costs one look at the ready set.
+**2. Honest idle time.** Flight Test measures idle time by reading the clock before and after the sleep. But on Cortex-M, when an interrupt wakes the CPU its handler runs straight away, *before* execution continues after the sleep instruction. Interrupt time would then be counted as idle time, and on a Daisy that hides the audio interrupt, and with it the audio headroom. (This was measured on hardware: the first version of Floret, which slept with `WFE`, reported 0.1 % interrupt time on a Daisy running audio.)
+
+**The solution handles both:** `floret_idle()` holds off interrupt handlers (`floret_port_lock()`, which sets PRIMASK on Cortex-M), then:
+
+```
+lock
+if no task is ready and every tick has been given to the timers:
+    start = now
+    sleep                  /* WFI: ends when an interrupt is pending ... */
+    end   = now            /* ... but its handler hasn't run yet         */
+    idle_time += end - start
+unlock                     /* pending handlers run now                   */
+```
+
+- **No lost wake-ups.** An interrupt that signals just before the check is seen by the check. One that becomes pending after it ends the sleep at once, because `WFI` wakes on a *pending* interrupt even while interrupts are held off.
+- **Exact accounting.** The end time is read before any handler runs, so idle time is pure sleep.
+- **Unserviced ticks count as work.** A tick that arrived after the timers were last processed must be processed before sleeping, or a due timer would wait a whole extra tick.
+- **What it costs:** interrupts are held off only while the CPU is asleep anyway, plus the few instructions that read the clock after waking (about 0.1 µs on a Daisy). Floret never holds off interrupts while doing work: signaling, dispatching and the queue are all lock-free.
+
+`floret_idle()` is public, the partner of `floret_step()`: to run Floret inside an existing main loop, call `if(!floret_step()) floret_idle();`.
 
 ## 7. Time and timers
 
@@ -189,14 +212,15 @@ void floret_timer_stop(floret_timer_t* t);
 
 ## 8. The port layer
 
-Everything hardware-specific is in one small interface, `floret_port.h`:
+Everything hardware-specific is in one small interface, `floret_port.h`, of five functions:
 
 | Function | Purpose | Daisy (Cortex-M7) implementation |
 |---|---|---|
 | `uint32_t floret_port_now(void)` | Free-running counter | TIM2 counter (keeps running while the CPU sleeps) |
 | `uint32_t floret_port_now_hz(void)` | Its frequency | TIM2 clock |
-| `void floret_port_idle_wait(void)` | Sleep until an event | `__WFE()` |
-| `void floret_port_notify(void)` | Wake a sleeper | `__SEV()` |
+| `uint32_t floret_port_lock(void)` | Hold off interrupt handlers | save PRIMASK, `__disable_irq()` |
+| `void floret_port_unlock(uint32_t)` | Restore them; pending handlers run | restore PRIMASK |
+| `void floret_port_sleep(void)` | Sleep until an interrupt is pending | `__DSB(); __WFI()` |
 
 **Why not the CPU's cycle counter for `now()`:** `DWT->CYCCNT` counts core clock cycles, and the core clock stops while the CPU sleeps. Idle time would read as zero.
 
@@ -258,13 +282,13 @@ The tool writes `floret_tasks.c` (the table) and `floret_tasks.h` (an enum of ta
 |---|---|---|
 | `sys` and `usr` handlers | **`isr`**, `sys` and `usr` | Interrupt work gets its own handler |
 | Round-robin passes through the table | **Strict priority by table row** | The most important work always runs next; one-instruction ready lookup |
-| Event OR inside a critical section | **Lock-free atomic OR** | Never masks interrupts, so audio is never delayed |
-| Busy loop when idle | **`WFE` / `SEV` sleep** | Saves power, with no wake-up race |
+| Event OR inside a critical section | **Lock-free atomic OR** | Signaling never masks interrupts, so audio is never delayed |
+| Busy loop when idle | **Sleep with `WFI`, interrupts held off around it** | Saves power, no wake-up race, and idle time that excludes interrupts |
 | Fixed 20 ms / 1 s system ticks | **Configurable tick and a timer service** | Musical timing needs about 1 ms; Daisy ticks from the audio clock |
 | No payloads | **Lock-free queues with timestamps** | Data travels with events; sample-accurate MIDI |
 | Run counters in the task table | **Telemetry block** read by Downlink | The table stays `const` in flash, and the counters become observable |
 | Hand-written task table | **Generated from CSV** | Declaring a task is one row |
-| Vendor-specific | **Port layer** | Builds on any C11 compiler; the hardware lives in four functions |
+| Vendor-specific | **Port layer** | Builds on any C11 compiler; the hardware lives in five functions |
 
 ## 13. Decisions
 
@@ -276,5 +300,6 @@ Decided in review, 2026-10-09:
 | Tick source on the Daisy | **The audio callback** (section 7). |
 | Queue utility | **In version 1** (section 10). |
 | `FLORET_MAX_TASKS` | **Default 16**, maximum 32 (the ready set is one word). |
+| Sleeping (after the first hardware test) | **PRIMASK + `WFI`** instead of `WFE`/`SEV`, so interrupt time is never counted as idle (section 6). |
 | `sys` class | **System events only**; every bit is defined by Floret. Application events, including timers, use `usr` (section 4). |
 | Telemetry statistics per class | **In version 1** ([flight_test.md](flight_test.md)). |

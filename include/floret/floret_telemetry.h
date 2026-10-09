@@ -53,7 +53,7 @@ typedef struct {
     uint32_t            clock_hz;                                               // floret_port_now_hz()
     uint32_t            task_count;                                             // valid entries in task[]
     uint32_t            now;                                                    // floret_port_now() at the last update
-    uint32_t            idle_time;                                              // time spent in floret_port_idle_wait()
+    uint32_t            idle_time;                                              // time asleep in floret_idle()
     uint32_t            ticks;                                                  // kernel ticks
     volatile uint32_t   uplink;                                                 // written by Downlink
     floret_task_stats_t task[FLORET_MAX_TASKS];

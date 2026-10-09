@@ -19,7 +19,7 @@ The vehicle maintains its telemetry frame; the ground station receives it on the
 | **Time per task and class** | The dispatcher reads `floret_port_now()` before and after every handler call and adds the difference to that task's counter for the class it dispatched (isr, sys or usr). |
 | **Dispatches per task and class** | Counted with each handler call. |
 | **Longest dispatch per task and class** | The maximum of those differences. **This is the key number for run-to-completion:** the longest handler bounds the latency of every other task. Splitting by class shows *which* handler is the slow one. |
-| **Idle time** | The run loop timestamps each `floret_port_idle_wait()` and adds the gap. |
+| **Idle time** | `floret_idle()` reads the clock before and after each sleep, with interrupt handlers held off, so the gap is pure sleep and never includes interrupt time (design.md, section 6). |
 | **Interrupts plus kernel overhead** | Not measured, derived: whatever is neither task time nor idle time. No interrupt handler needs instrumenting. On a Daisy this is mostly the audio interrupt, so it shows audio headroom directly. |
 
 All times are in ticks of `floret_port_now()`, a free-running hardware counter that keeps counting while the CPU sleeps. The CPU's own cycle counter (`DWT->CYCCNT`) can't be used, because it stops during sleep.
@@ -49,7 +49,7 @@ typedef struct {
     uint32_t          clock_hz;   /* floret_port_now_hz()                  */
     uint32_t          task_count; /* valid entries in task[]               */
     uint32_t          now;        /* floret_port_now() at the last update  */
-    uint32_t          idle_time;  /* ticks spent in idle_wait()            */
+    uint32_t          idle_time;  /* time asleep in floret_idle()          */
     uint32_t          ticks;      /* kernel ticks (section 7 of design.md) */
     volatile uint32_t uplink;     /* commands from Downlink, see section 4 */
     floret_task_stats_t task[FLORET_MAX_TASKS];
@@ -107,7 +107,7 @@ Downlink writes the word, then watches for it to return to 0 as acknowledgement.
 
 ## 6. Debug access during sleep
 
-When Floret sleeps (`WFE`), an STM32 may stop the clocks its debug port needs, so Downlink's reads would fail exactly while the system is idle. The STM32's `DBGMCU_CR` register has "debug in sleep" bits that keep them running.
+When Floret sleeps (`WFI`), an STM32 may stop the clocks its debug port needs, so Downlink's reads would fail exactly while the system is idle. The STM32's `DBGMCU_CR` register has "debug in sleep" bits that keep them running.
 
 **Downlink sets those bits itself when it connects,** rather than Floret setting them at start-up. A product that nobody is monitoring keeps its full power saving. This is what STM32CubeProgrammer's "Debug in Low Power mode" option does.
 

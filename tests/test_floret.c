@@ -204,9 +204,6 @@ static void test_signal_rules(void)
     CHECK(!floret_signal(3, FLORET_USR, 1));                                    // no such task
     CHECK(floret_signal(A, FLORET_USR, 0));                                     // nothing to do
     CHECK(!floret_step());
-    uint32_t before = port_host_notifies;
-    floret_signal(B, FLORET_ISR, 1);
-    CHECK(port_host_notifies > before);                                         // a sleeper would be woken
 }
 
 static void test_find(void)
@@ -312,6 +309,59 @@ static void test_telemetry(void)
 }
 
 //------------------------------------------------------------------------------
+//  Idle
+//------------------------------------------------------------------------------
+static void test_idle_sleeps(void)
+{
+    setup();
+    port_host_sleeps     = 0;
+    port_host_sleep_time = 100;
+    const volatile floret_telemetry_t* t = floret_telemetry_get();
+    const uint32_t idle_before = t->idle_time;
+    floret_idle();
+    CHECK_EQ(port_host_sleeps, 1);
+    CHECK_EQ(t->idle_time - idle_before, 100);
+    CHECK_EQ(port_host_lock_depth, 0);                                          // lock and unlock balanced
+}
+
+static void test_idle_skips_when_ready(void)
+{
+    setup();
+    port_host_sleeps = 0;
+    floret_signal(C, FLORET_USR, 1);
+    floret_idle();
+    CHECK_EQ(port_host_sleeps, 0);                                              // work waiting: no sleep
+    drain();
+    floret_tick();                                                              // a tick the timers haven't seen
+    floret_idle();
+    CHECK_EQ(port_host_sleeps, 0);
+    drain();
+    floret_idle();
+    CHECK_EQ(port_host_sleeps, 1);                                              // now there is nothing to do
+}
+
+static void pretend_isr(void)
+{
+    port_host_now += 30;                                                        // the handler takes 30 us
+    floret_signal(A, FLORET_ISR, 1);
+}
+
+static void test_idle_excludes_isr_time(void)
+{
+    setup();
+    port_host_sleep_time = 100;
+    port_host_on_unlock  = pretend_isr;                                         // pending during the sleep
+    const volatile floret_telemetry_t* t = floret_telemetry_get();
+    const uint32_t idle_before = t->idle_time;
+    const uint32_t now_before  = port_host_now;
+    floret_idle();
+    CHECK_EQ(port_host_now - now_before, 130);                                  // 100 asleep + 30 in the handler
+    CHECK_EQ(t->idle_time - idle_before, 100);                                  // only the sleep is idle
+    CHECK(floret_step());                                                       // the handler's event is waiting
+    CHECK(expect(0, A, FLORET_ISR, 1));
+}
+
+//------------------------------------------------------------------------------
 //  Queue
 //------------------------------------------------------------------------------
 typedef struct {
@@ -400,6 +450,9 @@ int main(void)
     RUN(test_timer_one_shot);
     RUN(test_timer_periodic);
     RUN(test_telemetry);
+    RUN(test_idle_sleeps);
+    RUN(test_idle_skips_when_ready);
+    RUN(test_idle_excludes_isr_time);
     RUN(test_queue_fifo);
     RUN(test_queue_wrap);
     RUN(test_queue_timestamps);

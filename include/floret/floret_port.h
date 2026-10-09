@@ -3,7 +3,7 @@
 //------------------------------------------------------------------------------
 //  floret_port.h
 //
-//  Everything Floret needs from the hardware. A port implements these four
+//  Everything Floret needs from the hardware. A port implements these five
 //  functions; the kernel contains no vendor code. See docs/design.md,
 //  section 8.
 //------------------------------------------------------------------------------
@@ -38,24 +38,37 @@ uint32_t floret_port_now(void);
 uint32_t floret_port_now_hz(void);
 
 //------------------------------------------------------------------------------
-//  Function: floret_port_idle_wait
-//      Sleep until something may have happened. Called by the dispatcher
-//      when no task is ready.
+//  Function: floret_port_lock
+//      Hold off interrupt handlers. The kernel uses this only around going
+//      to sleep: it locks, checks that there is still no work, sleeps, reads
+//      the clock, and unlocks. On Cortex-M: save PRIMASK, then __disable_irq().
 //
-//      Must return immediately if floret_port_notify() was called since the
-//      last return from this function; otherwise an event signaled just
-//      before the sleep would wait for an unrelated wake-up. Spurious
-//      returns are harmless. On Cortex-M: __WFE().
+//  Returns:
+//      State to pass to floret_port_unlock()
 //------------------------------------------------------------------------------
-void floret_port_idle_wait(void);
+uint32_t floret_port_lock(void);
 
 //------------------------------------------------------------------------------
-//  Function: floret_port_notify
-//      Wake floret_port_idle_wait(), or make its next call return at once.
-//      Called by floret_signal() and floret_tick(), so it must be safe from
-//      any interrupt. On Cortex-M: __SEV().
+//  Function: floret_port_unlock
+//      Restore the interrupt state saved by floret_port_lock(). Interrupts
+//      that became pending meanwhile are handled now.
 //------------------------------------------------------------------------------
-void floret_port_notify(void);
+void floret_port_unlock(uint32_t state);
+
+//------------------------------------------------------------------------------
+//  Function: floret_port_sleep
+//      Sleep until an interrupt is pending. Called with interrupts held off
+//      by floret_port_lock(): a pending interrupt must still end the sleep,
+//      but its handler runs only after floret_port_unlock(). This is how
+//      Cortex-M WFI behaves, so on Cortex-M: __DSB(); __WFI().
+//
+//      Because the kernel checks for work with interrupts held off and then
+//      sleeps, an event signaled just before the sleep can't be missed: its
+//      interrupt is still pending, so the sleep ends at once. And because
+//      the handler runs after the kernel has read the clock, interrupt time
+//      is never counted as idle time.
+//------------------------------------------------------------------------------
+void floret_port_sleep(void);
 
 #ifdef __cplusplus
 }

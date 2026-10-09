@@ -51,8 +51,10 @@ static inline uint32_t task_bit(floret_id_t id)
 
 //------------------------------------------------------------------------------
 //  Function: post
-//      Set events and mark the task ready, then wake the dispatcher. Shared
-//      by floret_signal() and the kernel's own sys events.
+//      Set events and mark the task ready. Shared by floret_signal() and the
+//      kernel's own sys events. No wake-up call is needed: floret_idle()
+//      checks for work with interrupts held off, so an event posted by an
+//      interrupt either is seen by that check or ends the sleep at once.
 //------------------------------------------------------------------------------
 static void post(floret_id_t id, floret_class_t cls, uint32_t bits)
 {
@@ -60,7 +62,15 @@ static void post(floret_id_t id, floret_class_t cls, uint32_t bits)
         return;
     (void)fa_or(&pending[id][cls], bits);
     (void)fa_or(&ready_set, task_bit(id));
-    floret_port_notify();
+}
+
+//------------------------------------------------------------------------------
+//  Function: work_waiting
+//      true if a task is ready or a tick hasn't been given to the timers yet.
+//------------------------------------------------------------------------------
+static bool work_waiting(void)
+{
+    return fa_load(&ready_set) != 0u || fa_load(&tick_count) != timer_ticks;
 }
 
 //------------------------------------------------------------------------------
@@ -251,22 +261,30 @@ bool floret_step(void)
     return true;
 }
 
+void floret_idle(void)
+{
+    const uint32_t state = floret_port_lock();                                  // hold off interrupt handlers
+    if(!work_waiting())                                                         // ... so nothing can slip in here
+    {
+#if FLORET_FLIGHT_TEST
+        const uint32_t start = floret_port_now();
+        floret_port_sleep();                                                    // ends when an interrupt is pending
+        const uint32_t end = floret_port_now();                                 // ... whose handler hasn't run yet
+        floret_telemetry.idle_time += end - start;
+        floret_telemetry.now = end;
+#else
+        floret_port_sleep();
+#endif
+    }
+    floret_port_unlock(state);                                                  // pending handlers run now
+}
+
 _Noreturn void floret_run(void)
 {
     for(;;)
     {
-        if(floret_step())
-            continue;
-#if FLORET_FLIGHT_TEST
-        const uint32_t start = floret_port_now();
-        floret_port_idle_wait();
-        const uint32_t end = floret_port_now();
-        floret_telemetry.idle_time += end - start;
-        floret_telemetry.now   = end;
-        floret_telemetry.ticks = fa_load(&tick_count);
-#else
-        floret_port_idle_wait();
-#endif
+        if(!floret_step())
+            floret_idle();
     }
 }
 
@@ -286,10 +304,7 @@ void floret_mask(floret_id_t task, floret_class_t cls, uint32_t enable_bits)
         return;
     masks[task][cls] = enable_bits;
     if(fa_load(&pending[task][cls]) & enable_bits)
-    {
         (void)fa_or(&ready_set, task_bit(task));                                // unmasking exposed pending events
-        floret_port_notify();
-    }
 }
 
 floret_id_t floret_find(const char* name)
@@ -312,7 +327,6 @@ floret_id_t floret_count(void)
 void floret_tick(void)
 {
     fa_inc(&tick_count);
-    floret_port_notify();
 }
 
 uint32_t floret_ticks(void)

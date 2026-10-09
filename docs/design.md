@@ -17,6 +17,8 @@ Floret takes the other path, **run-to-completion (RTC)**:
 
 The price is a single rule: **a handler must be short.** The longest handler bounds the latency of every other task, because nothing preempts it except interrupts. Floret measures that bound for you (section 9) instead of asking you to guess it.
 
+The public headers are plain C11 and also compile as C++ (`extern "C"`), so C++ applications such as Daisy firmware use them directly.
+
 Floret is the successor to the RTC scheduler in the Trilinear f5c firmware (`kc705_libs/tr_rtos`, tag `v1.11.1`). Section 12 lists what changed.
 
 ## 2. Concepts
@@ -83,7 +85,8 @@ bool floret_signal(floret_id_t task, floret_class_t cls, uint32_t bits);
 - **Lock-free:** the bits are ORed in with a C11 atomic (`atomic_fetch_or`, which compiles to an `LDREX`/`STREX` loop on Cortex-M3/M4/M7). No interrupts are ever masked, so signaling can't delay the audio interrupt, unlike libDaisy's PRIMASK-based `ScopedIrqBlocker`.
 - **Marks the task ready:** it also sets the task's bit in the ready set (section 5).
 - **Wakes the CPU:** finally, `floret_signal()` calls `floret_port_notify()` (section 8), so a CPU about to sleep sees the new event.
-- **Returns `false`** for an invalid task id.
+- **Only `isr` and `usr`.** The `sys` class belongs to the kernel, so `floret_signal()` refuses it.
+- **Returns `false`** for an invalid task id or class.
 
 Events are bits, not counts: signaling the same bit twice before the task runs delivers it once. Anything that needs a count, or a payload, goes in a queue that the event announces (section 10).
 
@@ -217,8 +220,8 @@ Event bits carry no data. When data must travel with an event (MIDI bytes, ADC b
 ```c
 typedef struct floret_queue floret_queue_t;   /* storage owned by the caller */
 
-void floret_queue_init(floret_queue_t* q, void* storage, uint32_t item_size,
-                       uint32_t capacity, bool timestamped);
+bool floret_queue_init(floret_queue_t* q, void* storage, uint32_t item_size,
+                       uint32_t capacity, bool timestamped);   /* false: capacity not a power of two */
 bool floret_queue_put(floret_queue_t* q, const void* item);              /* producer */
 bool floret_queue_get(floret_queue_t* q, void* item, uint32_t* stamp);   /* consumer */
 uint32_t floret_queue_count(const floret_queue_t* q);

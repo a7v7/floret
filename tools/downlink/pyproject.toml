@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "floret-downlink"
+version = "0.1.0"
+description = "Downlink: the ground station of Floret Flight Test"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Anthony Verbeck" }]
+requires-python = ">=3.10"
+dependencies = [
+    "pyelftools>=0.31",
+    "pyocd>=0.36",
+    "PySide6-Essentials>=6.6",
+]
+
+[project.scripts]
+downlink = "downlink.__main__:main"
+
+[tool.setuptools]
+packages = ["downlink"]

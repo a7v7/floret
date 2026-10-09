@@ -104,6 +104,7 @@ A mask gates *dispatch*, not delivery. A masked event stays pending and is dispa
 void floret_init(const floret_task_t* table, floret_id_t count);
 void floret_start(void);   /* calls each init(), sends FLORET_SYS_START */
 void floret_run(void);     /* never returns */
+bool floret_step(void);    /* one unit of work; false if nothing was ready */
 ```
 
 ### Strict priority: table order is priority order
@@ -132,6 +133,10 @@ loop forever:
 ```
 
 **One dispatch is one handler call.** Then the kernel starts over from the top, so a higher-priority event that arrived meanwhile is served next.
+
+`floret_run()` is `floret_step()` in a loop, sleeping whenever it returns `false`. Calling `floret_step()` directly runs Floret inside an existing main loop (useful when moving an application over gradually), and it is how the unit tests drive the kernel on a PC.
+
+Events for a task whose handler for that class is `NULL` are cleared and dropped.
 
 **Rules that follow from it:**
 - **Snapshot and clear.** A handler receives exactly the events that were pending when its dispatch began. Events that arrive during the handler, including events a task sends to itself, are dispatched on a later dispatch.

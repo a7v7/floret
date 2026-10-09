@@ -101,7 +101,7 @@ Downlink writes the word, then watches for it to return to 0 as acknowledgement.
 
 ## 5. Finding and trusting the block
 
-**The block is a `static` variable** inside the kernel, named `floret_telemetry`. Application code gets a read-only pointer from `floret_telemetry_get()`, keeping with the getters-over-globals convention. Downlink doesn't need the symbol to be global: local symbols appear in the ELF symbol table too. (With LTO, GCC may rename it, for example `floret_telemetry.lto_priv.0`, so Downlink matches the name prefix.) A Downlink that can't find the symbol can fall back to scanning RAM for the magic number.
+**The block is a `static volatile` variable** inside the kernel, named `floret_telemetry`. It must be `volatile` because its real reader, the debug probe, is invisible to the compiler: otherwise the compiler, especially with LTO, may treat the block as write-only and delete the updates. Application code gets a read-only pointer from `floret_telemetry_get()`, keeping with the getters-over-globals convention. Downlink doesn't need the symbol to be global: local symbols appear in the ELF symbol table too. (With LTO, GCC may rename it, for example `floret_telemetry.lto_priv.0`, so Downlink matches the name prefix.) A Downlink that can't find the symbol can fall back to scanning RAM for the magic number.
 
 **Downlink checks the ELF before trusting it.** It compares a few hundred bytes of the target's flash (the vector table and the start of `.text`) against the ELF. A mismatch means the ELF isn't the one running, so Downlink stops instead of graphing garbage. This needs nothing from the target.
 

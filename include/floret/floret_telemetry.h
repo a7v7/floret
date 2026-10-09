@@ -63,8 +63,12 @@ typedef struct {
 //  Function: floret_telemetry_get
 //      Read-only view of the telemetry block, for code on the target.
 //      Downlink finds the block through the ELF symbol floret_telemetry.
+//
+//      The block is volatile: its real reader is the debug probe, which the
+//      compiler can't see. Without volatile, GCC (especially with LTO) may
+//      treat the block as write-only and delete the updates.
 //------------------------------------------------------------------------------
-const floret_telemetry_t* floret_telemetry_get(void);
+const volatile floret_telemetry_t* floret_telemetry_get(void);
 
 //------------------------------------------------------------------------------
 //  Layout checks: the Downlink contract (32-bit targets only; a 64-bit host

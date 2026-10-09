@@ -89,6 +89,18 @@ _Noreturn void floret_run(void);
 #endif
 
 //------------------------------------------------------------------------------
+//  Function: floret_step
+//      Do one unit of work: process expired timers, then dispatch at most one
+//      handler of the highest-priority ready task. Never sleeps.
+//      floret_run() is this in a loop, sleeping when it returns false. Call it
+//      directly to run Floret inside an existing main loop, or in tests.
+//
+//  Returns:
+//      true if a task was ready, false if there was nothing to do
+//------------------------------------------------------------------------------
+bool floret_step(void);
+
+//------------------------------------------------------------------------------
 //  Function: floret_signal
 //      Set event bits for a task. Lock-free and safe from any context,
 //      including interrupts at any priority. Never masks interrupts.

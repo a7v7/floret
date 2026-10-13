@@ -6,9 +6,12 @@ Its main view is a **strip chart**, modeled on the multichannel chart recorders 
 
 - **The grid is printed on the paper,** so it moves with it.
 - **The pens are galvanometers:** each is a small mass on a spring, so a sudden change overshoots slightly and settles.
-- **Each lane has an attenuator** that picks its full scale (1 % to 100 %) automatically. Ink stays where it was written: a change of full scale affects new ink only, and is noted on the paper in red, as an engineer would have written it.
+- **Each lane has an attenuator** that sets its full scale. Ink stays where it was written: a change of full scale affects new ink only, and is noted on the paper in red, as an engineer would have written it.
+- **The front panel** has, for each lane, a silk-screened control group and, below it, a window with the lane's name and reading, centered over its trace.
+- **The attenuator is a bird's-head knob** in the control group, with an FS scale: **A** (auto: picks 1 % to 100 % to fit the signal), then fixed at 1, 2, 5, 10, 20, 50 or 100 %. Click a label to turn straight to it, click the knob to step clockwise, right-click to step back, or use the mouse wheel. Downlink remembers each lane's setting per firmware (by ELF name).
+- **The OL lamp** beside the knob lights while the lane is over a fixed full scale. The pen then sits at its stop, and the paper notes "over FS". On auto the attenuator ranges up instead, so the lamp stays dark.
 - **Notes also mark** a new longest dispatch for a task, and uplink commands.
-- **Toolbar:** paper speed (1 to 25 mm/s), Pause, Reset max (an uplink command), and **Tear off**, which saves the visible paper as a PNG.
+- **Toolbar:** paper speed (1 to 25 mm/s), Pause, Reset max (an uplink command), and **Tear off**, which saves the visible paper as a PNG in `Pictures\Downlink`, named `downlink-<firmware>-<date>-<time>.png`, with no dialog.
 
 There is also a text display:
 
@@ -54,6 +57,7 @@ downlink path/to/app.elf
 | `--once` | Take one measurement as text and exit |
 | `--reset-max` | Reset the "longest" figures first (an uplink command) |
 | `--probe ID` | Choose the probe when more than one is connected |
+| `--tear-off-dir DIR` | Where Tear off saves the paper (default: `Pictures\Downlink`) |
 | `--under-reset` | Connect while holding the target in reset (see below) |
 
 **Downlink checks the ELF first.** It compares sample bytes of the program image with the target's flash, and refuses to run if they differ, rather than reading wrong addresses.

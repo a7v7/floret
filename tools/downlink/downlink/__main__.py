@@ -27,6 +27,8 @@ def main(argv=None):
     ap.add_argument("--once", action="store_true", help="take one measurement as text and exit")
     ap.add_argument("--reset-max", action="store_true", help="reset the 'longest' figures before measuring")
     ap.add_argument("--probe", metavar="ID", help="debug probe unique ID, if more than one is connected")
+    ap.add_argument("--tear-off-dir", metavar="DIR",
+                    help="where Tear off saves the paper (default: Pictures\\Downlink)")
     ap.add_argument("--under-reset", action="store_true",
                     help="connect under reset (restarts the target): needed if it sleeps and "
                          "its debug-in-sleep bits aren't set yet")
@@ -41,7 +43,7 @@ def main(argv=None):
                 text.run(link, args.interval, args.once)
             else:
                 from . import stripchart                        # Qt is only needed here
-                return stripchart.run(link)
+                return stripchart.run(link, args.tear_off_dir)
     except (ProbeError, ElfError, LinkError, TelemetryError) as e:
         print(f"downlink: {e}", file=sys.stderr)
         return 1

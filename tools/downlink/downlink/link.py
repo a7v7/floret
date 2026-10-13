@@ -5,6 +5,7 @@
 Finds the telemetry block, checks that the ELF matches the running
 firmware, names the tasks, and takes snapshots. Also sends uplink commands.
 """
+import struct
 import time
 
 from . import telemetry
@@ -16,12 +17,17 @@ class LinkError(Exception):
 
 
 class Downlink:
+    # How long to wait for Floret to write its telemetry block. Right after
+    # --under-reset restarts the target, the application is still setting up
+    # the board, and the block is still zero until floret_init() runs.
+    START_TIMEOUT = 3.0
+
     def __init__(self, elf_path, probe):
         self.elf = ElfImage(elf_path)
         self.probe = probe
         self.address, _ = self.elf.telemetry_address()
         self._check_image()
-        raw = self.probe.read(self.address, telemetry.HEADER_SIZE)
+        raw = self._wait_for_start()
         self.clock_hz, self.task_count = telemetry.parse_header(raw)
         self.size = telemetry.block_size(self.task_count)
         first = telemetry.parse(self.probe.read(self.address, self.size))
@@ -36,6 +42,17 @@ class Downlink:
                 raise LinkError(f"{self.elf.path} doesn't match the firmware on the target "
                                 f"(bytes differ at {address:#010x}). Flash this ELF, or pick "
                                 "the ELF that is running.")
+
+    def _wait_for_start(self):
+        """The block's header, once its magic number is there, or whatever
+        is there after START_TIMEOUT (parse_header then says what's wrong)."""
+        deadline = time.monotonic() + self.START_TIMEOUT
+        while True:
+            raw = self.probe.read(self.address, telemetry.HEADER_SIZE)
+            magic = struct.unpack_from("<I", raw)[0]
+            if magic == telemetry.MAGIC or time.monotonic() >= deadline:
+                return raw
+            time.sleep(0.05)
 
     def _name(self, ptr, index):
         name = self.elf.cstring(ptr)

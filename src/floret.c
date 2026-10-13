@@ -35,9 +35,18 @@ static floret_timer_t* timers;                                                  
 #if FLORET_FLIGHT_TEST
 //------------------------------------------------------------------------------
 //  The telemetry block. volatile + used: its reader is the debug probe, which
-//  the compiler can't see, so it must not optimize the writes away.
+//  the compiler can't see, so it must not optimize the writes away. The probe
+//  reads RAM directly, so FLORET_TELEMETRY_SECTION can place the block in
+//  memory the data cache doesn't hold (see floret_config.h).
 //------------------------------------------------------------------------------
+#ifdef FLORET_TELEMETRY_SECTION
+#define FLORET_STR_(x) #x
+#define FLORET_STR(x)  FLORET_STR_(x)
+static volatile floret_telemetry_t floret_telemetry
+    __attribute__((used, section(FLORET_STR(FLORET_TELEMETRY_SECTION))));
+#else
 static volatile floret_telemetry_t floret_telemetry __attribute__((used));
+#endif
 #endif
 
 //------------------------------------------------------------------------------

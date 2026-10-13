@@ -37,6 +37,17 @@
 #endif
 
 //------------------------------------------------------------------------------
+//  FLORET_TELEMETRY_SECTION
+//      Linker section for the telemetry block, given as a bare name
+//      (-DFLORET_TELEMETRY_SECTION=.dtcmram_bss). Not defined by default: the
+//      block goes wherever the compiler puts static data.
+//      The debug probe reads the block straight from RAM, past the CPU's data
+//      cache. On a chip with a write-back cache (such as the Cortex-M7 in an
+//      STM32H7), put the block in memory the cache doesn't hold, for example
+//      tightly coupled memory, or the probe may see stale values.
+//------------------------------------------------------------------------------
+
+//------------------------------------------------------------------------------
 //  FLORET_ASSERT(expr)
 //      Called with conditions that must hold, such as a valid task id.
 //      Default: nothing. Point it at your own handler during development.

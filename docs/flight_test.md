@@ -103,6 +103,8 @@ Downlink writes the word, then watches for it to return to 0 as acknowledgement.
 
 **The block is a `static volatile` variable** inside the kernel, named `floret_telemetry`. It must be `volatile` because its real reader, the debug probe, is invisible to the compiler: otherwise the compiler, especially with LTO, may treat the block as write-only and delete the updates. Application code gets a read-only pointer from `floret_telemetry_get()`, keeping with the getters-over-globals convention. Downlink doesn't need the symbol to be global: local symbols appear in the ELF symbol table too. (With LTO, GCC may rename it, for example `floret_telemetry.lto_priv.0`, so Downlink matches the name prefix.) A Downlink that can't find the symbol can fall back to scanning RAM for the magic number.
 
+**The block must be in memory the data cache doesn't hold.** The probe reads RAM directly, past the CPU's data cache. A Cortex-M7 such as the STM32H7 caches its main SRAM with write-back, so the block's latest values can sit in the cache for a long time, and right after a reset the probe sees zeros where the CPU sees the block. Set `FLORET_TELEMETRY_SECTION` to a section in uncached memory. On a Daisy, libDaisy puts it in DTCM (`.dtcmram_bss`), which the cache never holds.
+
 **Downlink checks the ELF before trusting it.** It compares a few hundred bytes of the target's flash (the vector table and the start of `.text`) against the ELF. A mismatch means the ELF isn't the one running, so Downlink stops instead of graphing garbage. This needs nothing from the target.
 
 ## 6. Debug access during sleep

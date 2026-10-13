@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(floret VERSION 0.1.0 LANGUAGES C)
 
-# The kernel. The application (or its platform) supplies the four port
+# The kernel. The application (or its platform) supplies the five port
 # functions in floret/floret_port.h.
 add_library(floret STATIC
     src/floret.c

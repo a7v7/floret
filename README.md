@@ -24,6 +24,10 @@ The kernel and queue have host unit tests. The API may still change before 1.0.
 - **A queue** ([floret_queue.h](include/floret/floret_queue.h)): single producer, single consumer, lock-free, with optional timestamps. Typically an interrupt puts and a task gets.
 - **Flight Test** ([docs/flight_test.md](docs/flight_test.md)): a small telemetry block that the kernel keeps up to date, with the time spent in each handler, run counts, the longest dispatch and idle time. **Downlink** ([tools/downlink](tools/downlink)) reads it through the debug probe without stopping the target and draws it as a 1970s-style strip chart. An **uplink** word lets Downlink send commands back.
 
+![Downlink's strip chart of Floret_UsbAudio](docs/images/downlink.png)
+
+*Downlink watching `Floret_UsbAudio` on a Daisy Pod while it streams USB audio both ways: about 2.7 % CPU, almost all of it in interrupts (TinyUSB moves the audio in the USB interrupt). The `usb` task wakes only for the host's control requests, the burst near 1:05, and `status` ticks once a second when it prints a status line.*
+
 The design, and the reasons behind it, are in [docs/design.md](docs/design.md).
 
 ## A Floret app

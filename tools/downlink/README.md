@@ -33,18 +33,27 @@ interval 1.00 s, 1003 ticks
 
 ## Setup
 
-Python 3.10 or newer. From this folder:
+Python 3.10 or newer. From this folder, on Windows (PowerShell):
 
-```bash
+```powershell
 python -m venv .venv
-.venv/Scripts/python -m pip install -e .
+.venv\Scripts\Activate.ps1
+python -m pip install -e .
 ```
 
-This installs the dependencies and a `downlink` command into the virtual environment (`.venv/Scripts/downlink`; on Linux and macOS `.venv/bin/downlink`). Put that folder on your PATH, or call it by its full path, to run Downlink from anywhere. Without installing, `python -m downlink` works from this folder.
+On Linux and macOS:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+```
+
+This installs the dependencies and a `downlink` command into the virtual environment (`.venv/Scripts/downlink`; on Linux and macOS `.venv/bin/downlink`). The activate line puts that folder on the PATH, for this terminal only: run it again in each new terminal, or call `downlink` by its full path. Without installing, `python -m downlink` works from this folder.
 
 ## Use
 
-Connect the debug probe (tested with an ST-LINK V3), make sure no other tool such as STM32CubeProgrammer is connected to it, and give Downlink the ELF file of the application that is flashed:
+Connect the debug probe (tested with an ST-LINK V3), make sure no other tool such as STM32CubeProgrammer is connected to it, and give Downlink the ELF file of the application that is flashed. In a terminal where the virtual environment is active (see Setup):
 
 ```bash
 downlink path/to/app.elf

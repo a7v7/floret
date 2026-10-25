@@ -1,7 +1,8 @@
-# Python virtual environments and caches
+# Python virtual environments, caches and package metadata
 .venv/
 __pycache__/
 *.pyc
+*.egg-info/
 
 # Build output
 build*/

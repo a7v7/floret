@@ -17,7 +17,7 @@ def format_rates(r, title=""):
     lines.append(f"  {'handler':<18}{'load':>9}{'rate/s':>10}{'longest':>12}")
     for h in r.handlers:
         label = f"{h.task} {h.cls}"
-        lines.append(f"  {label:<18}{100 * h.load:8.2f}%{h.rate:10.1f}{h.max_us:9.2f} us")
+        lines.append(f"  {label:<18}{100 * h.load:8.2f}%{h.rate:10.1f}{telemetry.fmt_duration(h.max_us, 2):>12}")
     lines.append(f"  {'-' * 49}")
     lines.append(f"  {'tasks':<18}{100 * r.tasks:8.2f}%")
     lines.append(f"  {'irq + kernel':<18}{100 * r.irq_kernel:8.2f}%")

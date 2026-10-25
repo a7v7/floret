@@ -22,6 +22,11 @@ class TelemetryError(Exception):
     pass
 
 
+def fmt_duration(us, us_decimals=1):
+    """A dispatch time: '30.0 us' below 1 ms, '84.25 ms' from 1 ms up."""
+    return f"{us / 1000:.2f} ms" if us >= 1000 else f"{us:.{us_decimals}f} us"
+
+
 @dataclass
 class ClassStats:
     time: int                   # counter ticks spent in this handler (wraps)

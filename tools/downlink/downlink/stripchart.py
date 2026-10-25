@@ -24,7 +24,7 @@ from collections import deque
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from . import telemetry
-from .telemetry import UPLINK_RESET_MAX
+from .telemetry import UPLINK_RESET_MAX, fmt_duration
 
 # Paper and ink (a light, slightly warm chart paper; blue-black ink)
 PAPER = QtGui.QColor("#f4f1e6")
@@ -43,6 +43,7 @@ KNOB_STOPS = [None] + FULL_SCALES                           # None: auto
 KNOB_LABELS = ["A", "1", "2", "5", "10", "20", "50", "100"]
 KNOB_ARC = 270                                              # degrees, first stop to last
 PAPER_SPEEDS_MM_S = [1, 2.5, 5, 10, 25]
+READOUT_AVERAGE_S = 3.0                                     # the readouts average this long; the pens show every change
 MARGIN_W = 64                                               # time margin, px
 HEADER_H = 156                                              # front panel: controls, readout, pens
 CONTROL_BOX = (4, 90)                                       # knob group outline: top, bottom px
@@ -85,10 +86,19 @@ class Lane:
         self.setting = None             # the knob: None for auto, or a fixed full scale
         self.over = False               # fixed full scale exceeded: the pen is at its stop
         self.value = 0.0
+        self.reading = 0.0              # the readout: value averaged over READOUT_AVERAGE_S
         self.longest_us = 0.0
         self.peaks = deque()            # (wall time, value) for auto-ranging
+        self.recent = deque()           # (wall time, value) for the readout's average
         self.below_since = None
         self.ink = deque()              # (paper position mm, pen 0..1)
+
+    def average(self, now, value):
+        """Update the readout with the mean of the last READOUT_AVERAGE_S."""
+        self.recent.append((now, value))
+        while self.recent[0][0] < now - READOUT_AVERAGE_S:
+            self.recent.popleft()
+        self.reading = sum(v for _, v in self.recent) / len(self.recent)
 
     def auto_range(self, now, value):
         """Pick the smallest full scale that holds the last 5 s comfortably.
@@ -193,9 +203,10 @@ class Paper(QtWidgets.QWidget):
                 lane.value = r.irq_kernel
             else:
                 lane.value = r.task_load(lane.label)
+            lane.average(wall, lane.value)
             if lane.kind == "task":
                 if lane.longest_us and longest.get(lane.label, 0.0) > lane.longest_us * 1.05:
-                    self.notes.append((self.paper_mm, i, f"longest {longest[lane.label]:.0f} us"))
+                    self.notes.append((self.paper_mm, i, f"longest {fmt_duration(longest[lane.label], 0)}"))
                 lane.longest_us = longest.get(lane.label, 0.0)
             if lane.setting is None:
                 if lane.auto_range(wall, lane.value):
@@ -475,14 +486,13 @@ class Paper(QtWidgets.QWidget):
         # The reading is right-aligned so its digits and "%" stay in place.
         fm = p.fontMetrics()
         width = lambda *texts: max(fm.horizontalAdvance(t) for t in texts)
-        fields = [(fmt_pct(lane.value), width("100 %", "9.99 %", "0.00 %"), QtCore.Qt.AlignRight)]
+        fields = [(fmt_pct(lane.reading), width("100 %", "9.99 %", "0.00 %"), QtCore.Qt.AlignRight)]
         if lane.full_scale is not None:
             fs = f"FS {fmt_fs(lane.full_scale)}" + (" auto" if lane.setting is None else "")
             fields.append((fs, width("FS 100 % auto"), QtCore.Qt.AlignLeft))
         if lane.kind == "task" and lane.longest_us:
-            digits = max(3, len(f"{lane.longest_us:.0f}"))                # grows only with a new record
-            fields.append((f"longest {lane.longest_us:.1f} us",
-                           width(f"longest {'9' * digits}.9 us"), QtCore.Qt.AlignLeft))
+            longest = f"longest {fmt_duration(lane.longest_us)}"
+            fields.append((longest, width(longest, "longest 999.9 us", "longest 999.99 ms"), QtCore.Qt.AlignLeft))
 
         gap = fm.horizontalAdvance("   ")
         total = sum(w for _, w, _ in fields) + gap * (len(fields) - 1)

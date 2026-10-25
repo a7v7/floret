@@ -465,15 +465,31 @@ class Paper(QtWidgets.QWidget):
         font.setPointSizeF(8)
         p.setFont(font)
         p.setPen(QtGui.QColor("#c8bea6"))
-        detail = fmt_pct(lane.value)
+        self._detail_line(p, lane, QtCore.QRectF(win.left() + 2, top + 18, win.width() - 4, 14))
+
+    @staticmethod
+    def _detail_line(p, lane, rect):
+        # The reading, the full scale and the longest dispatch, each in a slot
+        # as wide as its widest text, so the line holds still as the numbers
+        # change (centring the text itself made it jump between 9 % and 10 %).
+        # The reading is right-aligned so its digits and "%" stay in place.
+        fm = p.fontMetrics()
+        width = lambda *texts: max(fm.horizontalAdvance(t) for t in texts)
+        fields = [(fmt_pct(lane.value), width("100 %", "9.99 %", "0.00 %"), QtCore.Qt.AlignRight)]
         if lane.full_scale is not None:
-            detail += f"   FS {fmt_fs(lane.full_scale)}"
-            if lane.setting is None:
-                detail += " auto"
+            fs = f"FS {fmt_fs(lane.full_scale)}" + (" auto" if lane.setting is None else "")
+            fields.append((fs, width("FS 100 % auto"), QtCore.Qt.AlignLeft))
         if lane.kind == "task" and lane.longest_us:
-            detail += f"   longest {lane.longest_us:.1f} us"
-        p.drawText(QtCore.QRectF(win.left() + 2, top + 18, win.width() - 4, 14),
-                   QtCore.Qt.AlignCenter, detail)
+            digits = max(3, len(f"{lane.longest_us:.0f}"))                # grows only with a new record
+            fields.append((f"longest {lane.longest_us:.1f} us",
+                           width(f"longest {'9' * digits}.9 us"), QtCore.Qt.AlignLeft))
+
+        gap = fm.horizontalAdvance("   ")
+        total = sum(w for _, w, _ in fields) + gap * (len(fields) - 1)
+        x = rect.center().x() - total / 2
+        for text, w, align in fields:
+            p.drawText(QtCore.QRectF(x, rect.top(), w, rect.height()), align | QtCore.Qt.AlignVCenter, text)
+            x += w + gap
 
     def _lamp(self, p, lane, r):
         # The OL (overload) lamp: a red jeweled pilot lamp in a chrome bezel.

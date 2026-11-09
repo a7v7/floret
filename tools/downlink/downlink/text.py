@@ -38,7 +38,16 @@ def run(link, interval=1.0, once=False, out=sys.stdout):
         while True:
             time.sleep(interval)
             cur = link.snapshot()
-            text = format_rates(telemetry.rates(prev, cur), title)
+            for _ in range(20):
+                try:
+                    r = telemetry.rates(prev, cur)
+                    break
+                except telemetry.TornSnapshot:              # read mid-update: read again
+                    time.sleep(0.005)
+                    cur = link.snapshot()
+            else:
+                r = telemetry.rates(prev, cur)              # still torn: say so
+            text = format_rates(r, title)
             out.write(("\x1b[H\x1b[J" if clear else "") + text + "\n" + ("" if clear else "\n"))
             out.flush()
             prev = cur

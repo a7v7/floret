@@ -81,6 +81,10 @@ downlink path/to/app.elf
 | **irq + kernel** | Everything that is neither a task nor idle: interrupt handlers (on a Daisy, mostly the audio interrupt) plus the kernel's own work |
 | **idle** | Time the CPU spent asleep |
 
+**irq + kernel** also holds anything else that runs outside Floret's tasks, such as an application's foreground loop (on the NUCLEO-H7S3L8, LVGL).
+
+**Torn reads are skipped.** The probe reads the block word by word, and a read takes a few milliseconds, so it often overlaps an update. Floret writes a handler's time or `idle_time` before `now`, so a read that lands between the two counts more idle and task time than the interval holds. Downlink drops such a snapshot and measures from the previous good one to the next, which keeps the totals exact. Without this, each torn read shows as a dip and a matching spike in the trace.
+
 ## A sleeping target
 
 An idle Floret sleeps, and an STM32H7 stops its debug port's clocks during sleep unless the "debug in sleep" bits in `DBGMCU_CR` are set. Downlink sets them when it connects, on the STM32H742/743/750/753 and the STM32H7R3/R7/S3/S7, and they stay set until the board is powered off. If Downlink can't reach the target at all, which happens when it's asleep and the bits aren't set yet, run once with `--under-reset`. Downlink then restarts the target, sets the bits, and lets it run.

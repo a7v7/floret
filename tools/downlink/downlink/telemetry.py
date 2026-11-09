@@ -22,6 +22,12 @@ class TelemetryError(Exception):
     pass
 
 
+class TornSnapshot(TelemetryError):
+    """The snapshot was read while Floret was updating the block. The probe
+    reads word by word, slowly next to how often Floret updates it (each
+    wake-up), so this is normal; take another."""
+
+
 def fmt_duration(us, us_decimals=1):
     """A dispatch time: '30.0 us' below 1 ms, '84.25 ms' from 1 ms up."""
     return f"{us / 1000:.2f} ms" if us >= 1000 else f"{us:.{us_decimals}f} us"
@@ -110,7 +116,12 @@ class Rates:
 
 
 def rates(a, b):
-    """Turn two snapshots into loads over the interval between them."""
+    """Turn two snapshots into loads over the interval between them.
+
+    Raises TornSnapshot if b was read in the middle of an update: Floret
+    writes idle_time or a handler's time first and now second, so a read
+    that lands between the two counts time that ends after b.now. Skip b and
+    measure from a to the next snapshot: the totals are exact again."""
     dt = _d(a.now, b.now)
     if dt == 0:
         raise TelemetryError("no time passed between snapshots")
@@ -124,6 +135,11 @@ def rates(a, b):
                 continue                                    # this handler has never run
             handlers.append(HandlerRates(tb.name, name, _d(ca.time, cb.time) / dt,
                                          runs * hz / dt, 1e6 * cb.max_time / hz))
-    idle = _d(a.idle_time, b.idle_time) / dt
+    idle_ticks = _d(a.idle_time, b.idle_time)
+    task_ticks = sum(_d(ca.time, cb.time) for ta, tb in zip(a.tasks, b.tasks)
+                     for ca, cb in zip(ta.cls, tb.cls))
+    if idle_ticks + task_ticks > dt:
+        raise TornSnapshot(f"idle and task time ({idle_ticks + task_ticks}) exceed the interval ({dt})")
+    idle = idle_ticks / dt
     tasks = sum(h.load for h in handlers)
     return Rates(dt / hz, _d(a.ticks, b.ticks), handlers, idle, tasks, 1.0 - idle - tasks)

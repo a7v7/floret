@@ -181,15 +181,16 @@ class Paper(QtWidgets.QWidget):
     # -- data ---------------------------------------------------------------
     def tick(self):
         wall = time.monotonic()
-        dt = wall - self.last_wall
-        self.last_wall = wall
         if self.paused:
+            self.last_wall = wall
             return
         cur = self.link.snapshot()
         try:
             r = telemetry.rates(self.prev, cur)
         except telemetry.TelemetryError:
-            return
+            return                                  # e.g. a torn read: the next tick measures from self.prev
+        dt = wall - self.last_wall
+        self.last_wall = wall
         self.prev = cur
 
         self.paper_mm += self.speed_mm_s * dt

@@ -11,12 +11,16 @@ import struct
 from pyocd.core.helpers import ConnectHelper
 
 # STM32H7: the debug port's clocks stop while the core sleeps unless the
-# DBGMCU "debug in sleep/stop/standby" bits and the D1/D3 debug clock enables
-# are set. They survive a reset; only a power cycle clears them.
+# DBGMCU "debug in sleep/stop/standby" bits and the debug clock enables are
+# set. They survive a reset; only a power cycle clears them. Every H7 has
+# DBGMCU at the same address; the clock enables differ by family.
 STM32H7_DBGMCU_IDC = 0x5C001000
 STM32H7_DBGMCU_CR = 0x5C001004
-STM32H7_DEV_IDS = {0x450}            # STM32H742/743/750/753
-STM32H7_DEBUG_IN_SLEEP = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 21) | (1 << 22)
+STM32H7_SLEEP_STOP_STANDBY = (1 << 0) | (1 << 1) | (1 << 2)
+STM32H7_DEBUG_IN_SLEEP = {           # by DEV_ID (DBGMCU_IDC bits 11:0)
+    0x450: STM32H7_SLEEP_STOP_STANDBY | (1 << 21) | (1 << 22),   # STM32H742/743/750/753: D1 and D3 debug clocks
+    0x485: STM32H7_SLEEP_STOP_STANDBY | (1 << 21),               # STM32H7R3/R7/S3/S7: one debug clock (DBGCKEN)
+}
 
 
 class ProbeError(Exception):
@@ -65,11 +69,12 @@ class Probe:
     def _enable_debug_in_sleep(self):
         """Keep the debug port alive while the core sleeps (STM32H7 only)."""
         try:
-            if self.target.read32(STM32H7_DBGMCU_IDC) & 0xFFF not in STM32H7_DEV_IDS:
+            bits = STM32H7_DEBUG_IN_SLEEP.get(self.target.read32(STM32H7_DBGMCU_IDC) & 0xFFF)
+            if bits is None:
                 return False
             cr = self.target.read32(STM32H7_DBGMCU_CR)
-            if cr & STM32H7_DEBUG_IN_SLEEP != STM32H7_DEBUG_IN_SLEEP:
-                self.target.write32(STM32H7_DBGMCU_CR, cr | STM32H7_DEBUG_IN_SLEEP)
+            if cr & bits != bits:
+                self.target.write32(STM32H7_DBGMCU_CR, cr | bits)
             return True
         except Exception:
             return False
